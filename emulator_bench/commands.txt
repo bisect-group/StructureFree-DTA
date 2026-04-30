@@ -54,6 +54,12 @@ python3 -m emulator_bench.launch_parallel_optuna \
   --storage sqlite:////root/github/EMULaToR/data/processed/baselines/StructureFree-DTA/optuna_studies/structurefree_optuna.db \
   --preload_embeddings
 
+# Aggregate retrain results: mean ± std across seeds, grouped by split group.
+python3 -m emulator_bench.aggregate_results \
+  --base_dir ~/github/EMULaToR/data/processed/baselines/StructureFree-DTA \
+  --split test \
+  --group_by split_group
+
 # Retrain all selected split jobs in parallel using the original model's default hparams.
 python3 -m emulator_bench.launch_parallel_retrain_from_optuna \
   --gpus 0 1 \

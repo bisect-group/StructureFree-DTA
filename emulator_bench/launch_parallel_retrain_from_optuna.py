@@ -305,7 +305,7 @@ def main():
     parser.add_argument("--patience", type=int, default=None)
     parser.add_argument("--min_delta", type=float, default=None)
     parser.add_argument("--amsgrad", action="store_true")
-    parser.add_argument("--monitor_metric", choices=["rmse", "mse", "mae", "loss", "r2_score", "pearson", "spearman", "ci"], default="loss")
+    parser.add_argument("--monitor_metric", choices=["rmse", "mse", "mae", "loss", "r2_score", "pearson", "spearman", "ci"], default="rmse")
     args = parser.parse_args()
 
     if args.trials_per_gpu <= 0:

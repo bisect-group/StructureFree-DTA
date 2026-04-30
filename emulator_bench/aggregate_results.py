@@ -18,7 +18,6 @@ def scan_runs(output_root: Path, split: str) -> list:
     rows = []
     for result_file in sorted(output_root.rglob(f"final_results_{split}.csv")):
         # expected: output_root/{split_group}/{split_name}/seed_{seed}/final_results_{split}.csv
-        parts = result_file.parts
         try:
             seed_dir = result_file.parent
             split_name = seed_dir.parent.name
@@ -32,6 +31,34 @@ def scan_runs(output_root: Path, split: str) -> list:
             continue
         rows.append({"split_group": split_group, "split_name": split_name, "seed": seed, **metrics})
     return rows
+
+
+def scan_tvt_sizes(output_root: Path) -> pd.DataFrame:
+    seen = set()
+    rows = []
+    for seed_dir in sorted(output_root.rglob("seed_*")):
+        if not seed_dir.is_dir():
+            continue
+        split_name = seed_dir.parent.name
+        split_group = seed_dir.parent.parent.name
+        key = (split_group, split_name)
+        if key in seen:
+            continue
+        sizes = {}
+        for prefix in ("train", "val", "test"):
+            pred_file = seed_dir / f"pred_label_{prefix}.csv"
+            if pred_file.exists():
+                try:
+                    sizes[f"n_{prefix}"] = len(pd.read_csv(pred_file))
+                except Exception:
+                    sizes[f"n_{prefix}"] = None
+            else:
+                sizes[f"n_{prefix}"] = None
+        if any(v is not None for v in sizes.values()):
+            n_total = sum(v for v in sizes.values() if v is not None)
+            rows.append({"split_group": split_group, "split_name": split_name, **sizes, "n_total": n_total})
+            seen.add(key)
+    return pd.DataFrame(rows).sort_values(["split_group", "split_name"]).reset_index(drop=True) if rows else pd.DataFrame()
 
 
 def format_mean_std(mean: float, var: float, decimals: int = 4) -> str:
@@ -73,7 +100,7 @@ def main():
                         help="Granularity of aggregation")
     parser.add_argument("--metrics", nargs="+", default=DISPLAY_METRICS,
                         help="Metrics to display (default: rmse mae r2_score pearson spearman ci)")
-    parser.add_argument("--save", type=str, default=None, help="Optional path to save aggregated CSV")
+    parser.add_argument("--save", type=str, default=None, help="Optional path to save aggregated metrics CSV")
     args = parser.parse_args()
 
     output_root = Path(args.output_root) if args.output_root else Path(args.base_dir) / "retrain_from_optuna"
@@ -88,25 +115,30 @@ def main():
                        if col not in ("split_group", "split_name", "seed")]
     requested = [m for m in args.metrics if m in all_metric_cols]
 
-    if args.group_by == "split_group":
-        group_cols = ["split_group"]
-    else:
-        group_cols = ["split_group", "split_name"]
-
+    group_cols = ["split_group"] if args.group_by == "split_group" else ["split_group", "split_name"]
     summary = summarize_seed_runs(rows, group_cols, requested)
 
     print(f"\nResults ({args.split}) — mean ± std across seeds\n")
     print_table(summary, requested, group_cols)
 
-    if args.save:
-        save_path = Path(args.save)
-        save_path.parent.mkdir(parents=True, exist_ok=True)
-        summary.to_csv(save_path, index=False)
-        print(f"\nSaved to {save_path}")
+    metrics_save = Path(args.save) if args.save else output_root / f"aggregate_{args.split}_{args.group_by}.csv"
+    metrics_save.parent.mkdir(parents=True, exist_ok=True)
+    summary.to_csv(metrics_save, index=False)
+    print(f"\nSaved metrics to {metrics_save}")
+
+    tvt_df = scan_tvt_sizes(output_root)
+    if not tvt_df.empty:
+        tvt_save = output_root / "split_tvt_sizes.csv"
+        tvt_df.to_csv(tvt_save, index=False)
+        print(f"Saved TVT sizes to {tvt_save}\n")
+        col_widths = {col: max(len(col), tvt_df[col].astype(str).str.len().max()) for col in tvt_df.columns}
+        header = "  ".join(col.ljust(col_widths[col]) for col in tvt_df.columns)
+        print(header)
+        print("-" * len(header))
+        for _, row in tvt_df.iterrows():
+            print("  ".join(str(row[col]).ljust(col_widths[col]) for col in tvt_df.columns))
     else:
-        default_save = output_root / f"aggregate_{args.split}_{args.group_by}.csv"
-        summary.to_csv(default_save, index=False)
-        print(f"\nSaved to {default_save}")
+        print("No pred_label files found for TVT sizes.")
 
 
 if __name__ == "__main__":

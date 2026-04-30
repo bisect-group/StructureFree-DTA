@@ -16,7 +16,7 @@
     "lr_warmup_start_factor": 0.1,
     "loss_alpha": 0.5,
     "clip_grad": 0.0,
-    "patience": 10,
+    "patience": 0,
     "min_delta": 0.0
   }
 }

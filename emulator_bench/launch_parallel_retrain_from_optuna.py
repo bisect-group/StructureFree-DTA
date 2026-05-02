@@ -85,6 +85,12 @@ def build_experiments(jobs, seeds, output_root):
     return experiments
 
 
+def legacy_random_run_dir(exp, output_root):
+    if exp["split_group"] == "random_splits_grouped_sequence":
+        return output_root / "random_splits" / "random" / f"seed_{exp['seed']}"
+    return None
+
+
 def train_command(exp, args, hparams, device):
     cmd = [
         sys.executable,
@@ -183,6 +189,19 @@ def train_command(exp, args, hparams, device):
 
 
 def run_experiment(exp, args, hparams, gpu_id):
+    output_root = Path(args.output_root) if args.output_root else Path(args.base_dir) / "retrain_from_optuna"
+    legacy_run_dir = legacy_random_run_dir(exp, output_root)
+    if legacy_run_dir is not None and (legacy_run_dir / "final_results_test.csv").exists() and not args.overwrite:
+        return {
+            "status": "skipped_legacy_random_exists",
+            "gpu_id": str(gpu_id),
+            "run_dir": str(legacy_run_dir),
+            "split_group": exp["split_group"],
+            "split_name": exp["split_name"],
+            "difficulty": exp["difficulty"],
+            "seed": exp["seed"],
+        }
+
     exp["run_dir"].mkdir(parents=True, exist_ok=True)
     metric_path = exp["run_dir"] / "final_results_test.csv"
     if metric_path.exists() and not args.overwrite:
@@ -254,7 +273,7 @@ def main():
     parser.add_argument("--base_dir", type=str, default=str(DEFAULT_BASE_DIR))
     parser.add_argument("--embeddings_dir", type=str, default=str(DEFAULT_EMBEDDINGS_DIR))
     parser.add_argument("--output_root", type=str, default=None)
-    parser.add_argument("--split_groups", nargs="+", default=DEFAULT_SPLIT_GROUPS)
+    parser.add_argument("--split_groups", nargs="+", default=None)
     parser.add_argument("--threshold", type=str, default=None)
     parser.add_argument("--thresholds", nargs="+", default=None)
     parser.add_argument("--sequence_col", type=str, default="sequence")

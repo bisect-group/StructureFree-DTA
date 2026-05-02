@@ -207,7 +207,7 @@ def main():
     parser.add_argument("--base_dir", type=str, default=str(DEFAULT_BASE_DIR))
     parser.add_argument("--embeddings_dir", type=str, default=str(DEFAULT_EMBEDDINGS_DIR))
     parser.add_argument("--results_dirname", type=str, default=DEFAULT_RESULTS_DIRNAME)
-    parser.add_argument("--split_groups", nargs="+", default=DEFAULT_SPLIT_GROUPS)
+    parser.add_argument("--split_groups", nargs="+", default=None)
     parser.add_argument("--threshold", type=str, default=None)
     parser.add_argument("--thresholds", nargs="+", default=None)
     parser.add_argument("--seeds", nargs="+", type=int, default=[0])

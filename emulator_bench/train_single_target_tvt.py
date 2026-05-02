@@ -211,7 +211,7 @@ def save_metrics(path: Path, metrics: dict) -> None:
 def main():
     parser = argparse.ArgumentParser(description="Train StructureFree-DTA head on explicit train/val/test split files using cached embeddings.")
     parser.add_argument("--base_dir", type=str, default=str(DEFAULT_BASE_DIR))
-    parser.add_argument("--split_group", type=str, default="random_splits")
+    parser.add_argument("--split_group", type=str, default=None)
     parser.add_argument("--threshold", type=str, default=None)
     parser.add_argument("--train_path", type=str, default=None)
     parser.add_argument("--val_path", type=str, default=None)

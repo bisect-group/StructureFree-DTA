@@ -185,7 +185,7 @@ def main():
     parser = argparse.ArgumentParser(description="Tune retraining-safe StructureFree-DTA hyperparameters with Optuna.")
     parser.add_argument("--base_dir", type=str, default=str(DEFAULT_BASE_DIR))
     parser.add_argument("--embeddings_dir", type=str, default=str(DEFAULT_EMBEDDINGS_DIR))
-    parser.add_argument("--split_groups", nargs="+", default=DEFAULT_SPLIT_GROUPS)
+    parser.add_argument("--split_groups", nargs="+", default=None)
     parser.add_argument("--threshold", type=str, default=None)
     parser.add_argument("--thresholds", nargs="+", default=None)
     parser.add_argument("--sequence_col", type=str, default="sequence")

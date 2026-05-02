@@ -14,7 +14,14 @@ from emulator_bench.common import DEFAULT_BASE_DIR, summarize_seed_runs
 DISPLAY_METRICS = ["rmse", "mae", "r2_score", "pearson", "spearman", "ci"]
 
 
-def scan_runs(output_root: Path, split: str) -> list:
+def normalize_split_labels(base_dir: Path, split_group: str, split_name: str) -> tuple[str, str]:
+    grouped_sequence = Path(base_dir) / "random_splits_grouped_sequence"
+    if split_group == "random_splits" and split_name == "random" and grouped_sequence.exists():
+        return "random_splits_grouped_sequence", "sequence"
+    return split_group, split_name
+
+
+def scan_runs(output_root: Path, split: str, base_dir: Path) -> list:
     rows = []
     for result_file in sorted(output_root.rglob(f"final_results_{split}.csv")):
         # expected: output_root/{split_group}/{split_name}/seed_{seed}/final_results_{split}.csv
@@ -25,6 +32,7 @@ def scan_runs(output_root: Path, split: str) -> list:
             seed = int(seed_dir.name.replace("seed_", ""))
         except (ValueError, IndexError):
             continue
+        split_group, split_name = normalize_split_labels(base_dir, split_group, split_name)
         try:
             metrics = pd.read_csv(result_file).iloc[0].to_dict()
         except Exception:
@@ -33,7 +41,7 @@ def scan_runs(output_root: Path, split: str) -> list:
     return rows
 
 
-def scan_tvt_sizes(output_root: Path) -> pd.DataFrame:
+def scan_tvt_sizes(output_root: Path, base_dir: Path) -> pd.DataFrame:
     seen = set()
     rows = []
     for seed_dir in sorted(output_root.rglob("seed_*")):
@@ -41,6 +49,7 @@ def scan_tvt_sizes(output_root: Path) -> pd.DataFrame:
             continue
         split_name = seed_dir.parent.name
         split_group = seed_dir.parent.parent.name
+        split_group, split_name = normalize_split_labels(base_dir, split_group, split_name)
         key = (split_group, split_name)
         if key in seen:
             continue
@@ -107,7 +116,8 @@ def main():
     if not output_root.exists():
         raise FileNotFoundError(f"Output root not found: {output_root}")
 
-    rows = scan_runs(output_root, args.split)
+    base_dir = Path(args.base_dir)
+    rows = scan_runs(output_root, args.split, base_dir)
     if not rows:
         raise FileNotFoundError(f"No final_results_{args.split}.csv files found under {output_root}")
 
@@ -126,7 +136,7 @@ def main():
     summary.to_csv(metrics_save, index=False)
     print(f"\nSaved metrics to {metrics_save}")
 
-    tvt_df = scan_tvt_sizes(output_root)
+    tvt_df = scan_tvt_sizes(output_root, base_dir)
     if not tvt_df.empty:
         tvt_save = output_root / "split_tvt_sizes.csv"
         tvt_df.to_csv(tvt_save, index=False)

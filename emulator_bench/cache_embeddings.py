@@ -100,7 +100,7 @@ def main():
     parser = argparse.ArgumentParser(description="Cache one-time ESM2 and ChemBERTa mean-pooled embeddings for StructureFree-DTA splits.")
     parser.add_argument("--base_dir", type=str, default=str(DEFAULT_BASE_DIR))
     parser.add_argument("--embeddings_dir", type=str, default=str(DEFAULT_EMBEDDINGS_DIR))
-    parser.add_argument("--split_groups", nargs="+", default=DEFAULT_SPLIT_GROUPS)
+    parser.add_argument("--split_groups", nargs="+", default=None)
     parser.add_argument("--threshold", type=str, default=None)
     parser.add_argument("--thresholds", nargs="+", default=None)
     parser.add_argument("--sequence_col", type=str, default="sequence")
@@ -151,7 +151,7 @@ def main():
             "embeddings_dir": str(args.embeddings_dir),
             "sequence_col": args.sequence_col,
             "smiles_col": args.smiles_col,
-            "split_groups": list(args.split_groups),
+            "split_groups": [job["split_group"] for job in jobs],
             "thresholds": args.thresholds,
             "protein_model_name": args.protein_model_name,
             "molecule_model_name": args.molecule_model_name,

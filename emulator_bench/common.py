@@ -16,8 +16,9 @@ DEFAULT_MODEL_NAME = "StructureFree-DTA"
 DEFAULT_BASE_DIR = Path.home() / "github" / "EMULaToR" / "data" / "processed" / "baselines" / DEFAULT_MODEL_NAME
 DEFAULT_EMBEDDINGS_DIR = DEFAULT_BASE_DIR / "embeddings"
 DEFAULT_RESULTS_DIRNAME = "structurefree_results"
+RANDOM_SPLIT_GROUP_PREFIX = "random_splits_grouped_"
+LEGACY_RANDOM_SPLIT_GROUP = "random_splits"
 DEFAULT_SPLIT_GROUPS = [
-    "random_splits",
     "enzyme_sequence_splits",
     "enzyme_structure_splits",
     "conformer_cosine_splits",
@@ -137,12 +138,56 @@ def _find_split_file(directory: Path, stem: str) -> Optional[Path]:
     return None
 
 
+def is_random_split_group(split_group: str) -> bool:
+    return split_group == LEGACY_RANDOM_SPLIT_GROUP or split_group.startswith(RANDOM_SPLIT_GROUP_PREFIX)
+
+
+def _random_split_name(split_group: str) -> str:
+    if split_group.startswith(RANDOM_SPLIT_GROUP_PREFIX):
+        return split_group.removeprefix(RANDOM_SPLIT_GROUP_PREFIX)
+    return "random"
+
+
+def _has_direct_tvt_split(directory: Path) -> bool:
+    return all(_find_split_file(directory, stem) for stem in ("train", "val", "test"))
+
+
+def _default_split_groups(base_dir: Path) -> List[str]:
+    base = Path(base_dir)
+    random_groups = [
+        child.name
+        for child in sorted(base.glob(f"{RANDOM_SPLIT_GROUP_PREFIX}*"))
+        if child.is_dir() and _has_direct_tvt_split(child)
+    ]
+    if not random_groups and _has_direct_tvt_split(base / LEGACY_RANDOM_SPLIT_GROUP):
+        random_groups = [LEGACY_RANDOM_SPLIT_GROUP]
+    return random_groups + list(DEFAULT_SPLIT_GROUPS)
+
+
+def _expand_split_groups(base_dir: Path, split_groups: Optional[Iterable[str]]) -> List[str]:
+    if split_groups is None:
+        return _default_split_groups(base_dir)
+
+    expanded: List[str] = []
+    seen = set()
+    for split_group in split_groups:
+        split_group = str(split_group)
+        matches = []
+        if any(char in split_group for char in "*?["):
+            matches = [child.name for child in sorted(Path(base_dir).glob(split_group)) if child.is_dir()]
+        for value in matches or [split_group]:
+            if value not in seen:
+                seen.add(value)
+                expanded.append(value)
+    return expanded
+
+
 def discover_split_jobs(
     base_dir: Path,
     split_groups: Optional[Iterable[str]] = None,
     thresholds: Optional[Iterable[str]] = None,
 ) -> List[Dict[str, str]]:
-    split_groups = list(split_groups or DEFAULT_SPLIT_GROUPS)
+    split_groups = _expand_split_groups(base_dir, split_groups)
     threshold_filter = list(thresholds) if thresholds is not None else None
     jobs: List[Dict[str, str]] = []
 
@@ -155,8 +200,8 @@ def discover_split_jobs(
         val_path = _find_split_file(group_dir, "val")
         test_path = _find_split_file(group_dir, "test")
         if train_path and val_path and test_path:
-            split_name = split_group.replace("_splits", "")
-            difficulty = "random" if split_group == "random_splits" else split_name
+            split_name = _random_split_name(split_group) if is_random_split_group(split_group) else split_group.replace("_splits", "")
+            difficulty = split_name
             jobs.append(
                 {
                     "split_group": split_group,
@@ -202,12 +247,12 @@ def discover_split_jobs(
 
 
 def resolve_single_split_job(base_dir: Path, split_group: str, threshold: Optional[str] = None) -> Dict[str, str]:
-    threshold_filter = None if split_group in {"random_splits", "group_shuffle_splits", "uniprot_time_splits"} else normalize_threshold_args(threshold=threshold)
+    threshold_filter = None if is_random_split_group(split_group) or split_group in {"group_shuffle_splits", "uniprot_time_splits"} else normalize_threshold_args(threshold=threshold)
     jobs = discover_split_jobs(base_dir, split_groups=[split_group], thresholds=threshold_filter)
     if not jobs:
         detail = f"{split_group}/{threshold}" if threshold else split_group
         raise FileNotFoundError(f"No split job discovered for {detail} in {base_dir}")
-    if threshold is None and len(jobs) > 1 and split_group not in {"random_splits", "group_shuffle_splits", "uniprot_time_splits"}:
+    if threshold is None and len(jobs) > 1 and not is_random_split_group(split_group) and split_group not in {"group_shuffle_splits", "uniprot_time_splits"}:
         available = ", ".join(job["split_name"] for job in jobs)
         raise ValueError(f"Multiple jobs found for {split_group}. Specify --threshold. Available: {available}")
     return jobs[0] if threshold is None else next(job for job in jobs if job["split_name"] == threshold)

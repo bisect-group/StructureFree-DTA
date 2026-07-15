@@ -5,7 +5,13 @@ from pathlib import Path
 
 import pandas as pd
 import torch
-from tqdm.auto import tqdm
+try:
+    from src.utils.rich_progress import progress, write
+except ModuleNotFoundError:
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+    from src.utils.rich_progress import progress, write
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -44,7 +50,7 @@ def _worker_fn(rank: int, device_str: str, pending_chunk: list, kind: str, model
     print(f"[{device_str}] Loading {model_name} | precision: {precision_mode}", flush=True)
     tokenizer, model = load_encoder(model_name, device)
     written = 0
-    for start in tqdm(range(0, len(pending_chunk), batch_size), desc=f"[{device_str}] {kind}", unit="batch", position=rank, leave=True):
+    for start in progress(range(0, len(pending_chunk), batch_size), desc=f"[{device_str}] {kind}", unit="batch", position=rank, leave=True):
         batch_values = pending_chunk[start : start + batch_size]
         embeddings = embed_text_batch(batch_values, tokenizer, model, device, max_length=max_length, autocast_dtype=autocast_dtype)
         for value, embedding in zip(batch_values, embeddings):

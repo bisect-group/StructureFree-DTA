@@ -11,7 +11,13 @@ import pandas as pd
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from tqdm.auto import tqdm
+try:
+    from src.utils.rich_progress import progress, write
+except ModuleNotFoundError:
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+    from src.utils.rich_progress import progress, write
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -108,7 +114,7 @@ def evaluate_loader(model, loader, device, autocast_dtype, loss_alpha, desc="Eva
     total_samples = 0
     preds = []
     truths = []
-    iterator = tqdm(loader, desc=desc, unit="batch", leave=False) if show_progress else loader
+    iterator = progress(loader, desc=desc, unit="batch", leave=False) if show_progress else loader
     with torch.no_grad():
         for batch in iterator:
             batch = prepare_batch(batch, device)
@@ -131,7 +137,7 @@ def train_one_epoch(model, loader, optimizer, device, scaler, autocast_dtype, lo
     model.train()
     total_loss = 0.0
     total_samples = 0
-    iterator = tqdm(loader, desc=desc, unit="batch", leave=False)
+    iterator = progress(loader, desc=desc, unit="batch", leave=False)
     for batch in iterator:
         batch = prepare_batch(batch, device)
         labels = batch.pop("labels")
@@ -347,7 +353,7 @@ def main():
     else:
         print(f"Device: {device} | precision: {precision_mode}", flush=True)
 
-    for epoch in tqdm(range(1, args.epochs + 1), desc="Training", unit="epoch"):
+    for epoch in progress(range(1, args.epochs + 1), desc="Training", unit="epoch"):
         batch_size = batch_size_for_epoch(batch_schedule, epoch)
         train_loader = make_loader(train_dataset, batch_size, args, shuffle=True)
         train_metrics = train_one_epoch(

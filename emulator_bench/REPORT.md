@@ -2,7 +2,7 @@
 
 ## Method
 Structure-free DTA model (Bidgoli et al., J. Cheminformatics 2026). Inputs are a FASTA sequence and a SMILES string.
-ESM2-t6-8M encodes the protein. ChemBERTa-77M-MLM encodes the molecule. Both encoders are fine-tuned end to end (gradient checkpointing on).
+ESM2-t6-8M encodes the protein. ChemBERTa-77M-MLM encodes the molecule. Both encoders are fine-tuned end to end (gradient checkpointing off in the wrapper, see Deviations).
 Each encoder output is mean pooled over all token positions, padding included. The two vectors are concatenated (320 + 384 = 704).
 Two Residual Inception blocks (Conv1d kernels 1 and 3, BatchNorm, ReLU, dropout) mix the vector.
 A 4-layer MLP with Mish (1024-768-512-256-1) gives one value.
@@ -58,7 +58,9 @@ Changed: `aggregate_results.py` (no `retrain_from_optuna`, no legacy `random_spl
 
 ## Deviations
 - Final val/test predictions use batch size 256. Eval mode (no dropout, BatchNorm running stats) makes predictions independent of batch size. Validation during training uses 64 as in the original.
-- `num_workers` (default 8) for tokenisation in DataLoader workers. Same tokens.
+- Tokens are made once per distinct sequence and SMILES (same ids and masks as the original collate) and kept on the GPU with the labels. A `DataLoader` with `num_workers=0` yields index batches only, so shuffle order and global RNG draws match the original. `--num_workers` is accepted but unused.
+- Gradient checkpointing is switched off after the model is built. It was only a memory saving and gives the same numbers. Peak allocated GPU memory per run rises from about 1.0 GB to about 1.5 GB (measured with a 3-epoch run, batch size 64).
+- AdamW uses the fused CUDA kernel (`fused=True` on CUDA). This is not bit-identical to the default kernel: the loss differs in the third decimal after 60 steps. The training recipe is the same.
 - Train-set predictions are not written (the original does not evaluate train).
 - Only the best checkpoint is saved (no per-epoch latest checkpoint).
 - No other speed-up. fp16 autocast is the original behaviour.

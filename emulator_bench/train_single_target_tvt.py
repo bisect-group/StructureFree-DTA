@@ -24,7 +24,7 @@ os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 
 class Collate:
-    """Tokenizes a batch like the original `collate_fn`: pad to the fixed maximum length."""
+    """Tokenizes like the original `collate_fn`: pad to the fixed maximum length."""
 
     def __init__(self, args):
         self.molecule_tokenizer = AutoTokenizer.from_pretrained(args.molecule_model_name)
@@ -32,25 +32,38 @@ class Collate:
         self.max_molecule_length = args.max_molecule_length
         self.max_protein_length = args.max_protein_length
 
-    def __call__(self, rows):
-        molecules, proteins, labels = zip(*rows)
-        mol = self.molecule_tokenizer(list(molecules), padding="max_length", truncation=True, max_length=self.max_molecule_length, return_tensors="pt")
-        prot = self.protein_tokenizer(list(proteins), padding="max_length", truncation=True, max_length=self.max_protein_length, return_tensors="pt")
-        return {
-            "molecule_input_ids": mol.input_ids,
-            "molecule_attention_mask": mol.attention_mask,
-            "protein_input_ids": prot.input_ids,
-            "protein_attention_mask": prot.attention_mask,
-            "labels": torch.tensor(labels, dtype=torch.float),
-        }
+    def encode(self, tokenizer, texts, max_length):
+        """Tokenize each distinct string once. Same ids and masks as tokenizing every row."""
+        codes, unique = pd.factorize(pd.Series(texts))
+        enc = tokenizer(list(unique), padding="max_length", truncation=True, max_length=max_length, return_tensors="pt")
+        codes = torch.as_tensor(codes)
+        return enc.input_ids[codes], enc.attention_mask[codes]
+
+    def tokenize(self, frame, args, device):
+        mol_ids, mol_mask = self.encode(self.molecule_tokenizer, frame[args.smiles_col].astype(str), self.max_molecule_length)
+        prot_ids, prot_mask = self.encode(self.protein_tokenizer, frame[args.sequence_col].astype(str), self.max_protein_length)
+        labels = torch.tensor(frame[args.target_col].astype(float).tolist(), dtype=torch.float)
+        tensors = {"molecule_input_ids": mol_ids, "molecule_attention_mask": mol_mask,
+                   "protein_input_ids": prot_ids, "protein_attention_mask": prot_mask, "labels": labels}
+        return {key: value.to(device) for key, value in tensors.items()}
 
 
-def make_rows(frame: pd.DataFrame, args):
-    return list(zip(frame[args.smiles_col].astype(str), frame[args.sequence_col].astype(str), frame[args.target_col].astype(float)))
+class GpuBatches:
+    """Batches indexed from device-resident tokens. The DataLoader only yields index batches
+    (num_workers=0), so it draws from the global RNG exactly like the original loader."""
 
+    def __init__(self, tensors, batch_size, shuffle):
+        self.tensors = tensors
+        self.device = tensors["labels"].device
+        self.loader = DataLoader(list(range(len(tensors["labels"]))), batch_size=batch_size, shuffle=shuffle)
 
-def make_loader(rows, batch_size, args, collate, shuffle):
-    return DataLoader(rows, batch_size=batch_size, shuffle=shuffle, num_workers=args.num_workers, collate_fn=collate, pin_memory=True)
+    def __len__(self):
+        return len(self.loader)
+
+    def __iter__(self):
+        for index in self.loader:
+            index = index.to(self.device)
+            yield {key: value[index] for key, value in self.tensors.items()}
 
 
 def to_device(batch, device):
@@ -125,7 +138,7 @@ def main():
     parser.add_argument("--early_stopping_patience", type=int, default=10)
     parser.add_argument("--eval_batch_size", type=int, default=256, help="Batch size for the final val/test predictions only.")
     parser.add_argument("--device", default="cuda:0" if torch.cuda.is_available() else "cpu")
-    parser.add_argument("--num_workers", type=int, default=8)
+    parser.add_argument("--num_workers", type=int, default=8, help="Unused. Batches are indexed from pre-tokenised GPU tensors. Kept so callers can still pass it.")
     parser.add_argument("--seed", type=int, default=666)
     parser.add_argument("--amp", action="store_true", help="bf16 autocast on Ampere or newer, fp16 with GradScaler on older GPUs. Default: fp16 autocast with GradScaler on CUDA, as in the original.")
     parser.add_argument("--max_rows", type=int, default=None, help="Smoke-test only: keep the first N rows of each split.")
@@ -139,8 +152,8 @@ def main():
     frames = {name: read_table(Path(getattr(args, f"{name}_path"))) for name in ("train", "val", "test")}
     if args.max_rows:
         frames = {name: frame.head(args.max_rows).reset_index(drop=True) for name, frame in frames.items()}
-    rows = {name: make_rows(frame, args) for name, frame in frames.items()}
     collate = Collate(args)
+    data = {name: collate.tokenize(frame, args, device) for name, frame in frames.items()}
 
     model = AffinityPredictor(
         protein_model_name=args.protein_model_name,
@@ -149,8 +162,10 @@ def main():
         inception_out_channels=args.inception_out_channels,
         dropout=args.dropout,
     ).to(device)
+    model.protein_model.gradient_checkpointing_disable()
+    model.molecule_model.gradient_checkpointing_disable()
     loss_fn = DrugTargetInteractionLoss(alpha=args.loss_alpha)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay, fused=device.type == "cuda")
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=0)
     if args.amp:
         amp_dtype = resolve_amp_dtype(device)[0]
@@ -158,8 +173,8 @@ def main():
         amp_dtype = torch.float16 if device.type == "cuda" else None
     scaler = torch.amp.GradScaler("cuda", enabled=amp_dtype == torch.float16)
 
-    train_loader = make_loader(rows["train"], args.batch_size, args, collate, shuffle=True)
-    val_loader = make_loader(rows["val"], args.batch_size, args, collate, shuffle=False)
+    train_loader = GpuBatches(data["train"], args.batch_size, shuffle=True)
+    val_loader = GpuBatches(data["val"], args.batch_size, shuffle=False)
     best_path = out_dir / "bestmodel.pth"
     best_val_loss, best_epoch, patience_counter = float("inf"), 0, 0
     started_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -190,7 +205,7 @@ def main():
         model.load_state_dict(torch.load(best_path, map_location=device))
     final_metrics = {}
     for name in ("val", "test"):
-        loader = make_loader(rows[name], args.eval_batch_size, args, collate, shuffle=False)
+        loader = GpuBatches(data[name], args.eval_batch_size, shuffle=False)
         y_true, y_pred, _ = evaluate(model, loader, loss_fn, device, f"Final {name}")
         final_metrics[name] = write_split_results(out_dir, name, frames[name], y_true, y_pred, args)
 

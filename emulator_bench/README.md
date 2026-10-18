@@ -18,10 +18,10 @@ Split groups run by default: `random_splits_grouped_sequence`, `random_splits_gr
 ## Scripts
 
 - `train_single_target_tvt.py`: trains one split and seed. Writes `bestmodel.pth`, `logfile.csv`, `pred_label_{val,test}.csv`, `final_results_{val,test}.csv`, `run_summary.json`.
-- `run_split_benchmarks.py`: runs all discovered splits and seeds (default 666 777 888). Skips finished runs. Writes only per-run folders, so parallel processes (one per seed or GPU) never overwrite each other.
+- `run_split_benchmarks.py`: runs all discovered splits and seeds (default 666 777 888). Skips finished runs. `--gpus 0 1 2` gives each run one GPU through `CUDA_VISIBLE_DEVICES`. `--runs_per_gpu N` sets the runs per GPU. Without `--gpus`, runs go one at a time on `--device`. `--amp` switches the training precision from the original fp16 autocast to bf16 (Ampere or newer; fp16 with GradScaler on older GPUs). Run folders are separate, so parallel runs never overwrite each other.
 - `aggregate_results.py`: prints mean and std over seeds from an output root.
 
-Outputs go to `--output_root`, default `outputs/baselines/StructureFree-DTA/<task>`, as `<split_group>/<split_name>/seed_<seed>`. Split files are never modified.
+Outputs go to `--output_root`, default `outputs/baselines/StructureFree-DTA/<task>`, as `<split_group>/<split_name>/seed_<seed>`. Split groups without `threshold_*` folders use `all` as `<split_name>`. Split files are never modified.
 
 ## Settings
 

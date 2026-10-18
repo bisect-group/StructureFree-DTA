@@ -10,6 +10,9 @@ python -m emulator_bench.run_split_benchmarks --task kd --seeds 666 --device cud
 python -m emulator_bench.run_split_benchmarks --task kd --seeds 777 --device cuda:1
 python -m emulator_bench.run_split_benchmarks --task kd --seeds 888 --device cuda:2
 
+# Multi-GPU: GPUs 0 1 2, two runs per GPU, mixed precision (bf16 on Ampere or newer).
+python -m emulator_bench.run_split_benchmarks --task kd --gpus 0 1 2 --runs_per_gpu 2 --amp
+
 # Other tasks: kcat km ki ic50 ec50.
 python -m emulator_bench.run_split_benchmarks --task ec50 --device cuda:0
 
@@ -18,7 +21,7 @@ python -m emulator_bench.train_single_target_tvt \
   --train_path ../../data/processed/datasets/binding_affinity_dataset/kd/uniprot_time_splits/train.parquet \
   --val_path ../../data/processed/datasets/binding_affinity_dataset/kd/uniprot_time_splits/val.parquet \
   --test_path ../../data/processed/datasets/binding_affinity_dataset/kd/uniprot_time_splits/test.parquet \
-  --out_dir /path/to/out/uniprot_time_splits/uniprot_time/seed_666 \
+  --out_dir /path/to/out/uniprot_time_splits/all/seed_666 \
   --seed 666 --device cuda:0
 
 # Mean and std over seeds. Reads every seed folder. Default groups by split folder (group and threshold).

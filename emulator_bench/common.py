@@ -59,6 +59,15 @@ def set_seed(seed: int) -> None:
     torch.cuda.manual_seed_all(seed)
 
 
+def resolve_amp_dtype(device: torch.device):
+    """bf16 on Ampere or newer, fp16 on older GPUs, fp32 (None) on CPU."""
+    if device.type != "cuda":
+        return None, "fp32"
+    if torch.cuda.get_device_capability(device)[0] >= 8:
+        return torch.bfloat16, "bf16"
+    return torch.float16, "fp16"
+
+
 def read_table(path: Path) -> pd.DataFrame:
     return pd.read_parquet(path)
 
@@ -68,7 +77,7 @@ def discover_split_jobs(base_dir: Path, split_groups: Optional[Iterable[str]] = 
     jobs: List[Dict[str, str]] = []
     for split_group in split_groups or DEFAULT_SPLIT_GROUPS:
         group_dir = Path(base_dir) / split_group
-        candidates = [(split_group.removeprefix("random_splits_grouped_").replace("_splits", ""), group_dir)]
+        candidates = [("all", group_dir)]
         if not (group_dir / "train.parquet").exists():
             candidates = [(child.name, child) for child in sorted(group_dir.glob("threshold_*")) if child.is_dir()]
         for split_name, root in candidates:

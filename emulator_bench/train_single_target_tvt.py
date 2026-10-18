@@ -5,7 +5,6 @@ import sys
 import time
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import DataLoader
@@ -18,7 +17,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 sys.path.insert(0, str(REPO_ROOT))
 
-from emulator_bench.common import append_csv_row, read_table, regression_metrics, save_json, set_seed  # noqa: E402
+from emulator_bench.common import append_csv_row, read_table, regression_metrics, resolve_amp_dtype, save_json, set_seed  # noqa: E402
 from models import AffinityPredictor, DrugTargetInteractionLoss  # noqa: E402
 
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
@@ -58,14 +57,14 @@ def to_device(batch, device):
     return {key: value.to(device) for key, value in batch.items()}
 
 
-def train_one_epoch(model, loader, loss_fn, optimizer, scaler, device, desc):
+def train_one_epoch(model, loader, loss_fn, optimizer, scaler, amp_dtype, device, desc):
     model.train()
     total_loss, total_samples = 0.0, 0
     optimizer.zero_grad()
     for batch in progress(loader, desc=desc, unit="batch", leave=False):
         batch = to_device(batch, device)
         labels = batch.pop("labels")
-        with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=scaler.is_enabled()):
+        with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=amp_dtype is not None):
             loss = loss_fn(model(batch).view(-1), labels)
         scaler.scale(loss).backward()
         scaler.step(optimizer)
@@ -128,6 +127,7 @@ def main():
     parser.add_argument("--device", default="cuda:0" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--num_workers", type=int, default=8)
     parser.add_argument("--seed", type=int, default=666)
+    parser.add_argument("--amp", action="store_true", help="bf16 autocast on Ampere or newer, fp16 with GradScaler on older GPUs. Default: fp16 autocast with GradScaler on CUDA, as in the original.")
     parser.add_argument("--max_rows", type=int, default=None, help="Smoke-test only: keep the first N rows of each split.")
     args = parser.parse_args()
 
@@ -152,7 +152,11 @@ def main():
     loss_fn = DrugTargetInteractionLoss(alpha=args.loss_alpha)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=0)
-    scaler = torch.amp.GradScaler("cuda", enabled=device.type == "cuda")
+    if args.amp:
+        amp_dtype = resolve_amp_dtype(device)[0]
+    else:
+        amp_dtype = torch.float16 if device.type == "cuda" else None
+    scaler = torch.amp.GradScaler("cuda", enabled=amp_dtype == torch.float16)
 
     train_loader = make_loader(rows["train"], args.batch_size, args, collate, shuffle=True)
     val_loader = make_loader(rows["val"], args.batch_size, args, collate, shuffle=False)
@@ -165,7 +169,7 @@ def main():
     epoch = 0
 
     for epoch in progress(range(1, args.epochs + 1), desc="Training", unit="epoch"):
-        train_loss = train_one_epoch(model, train_loader, loss_fn, optimizer, scaler, device, f"Epoch {epoch} train")
+        train_loss = train_one_epoch(model, train_loader, loss_fn, optimizer, scaler, amp_dtype, device, f"Epoch {epoch} train")
         scheduler.step()
         val_true, val_pred, val_loss = evaluate(model, val_loader, loss_fn, device, f"Epoch {epoch} val")
         val_metrics = regression_metrics(val_true, val_pred)

@@ -64,9 +64,8 @@ def print_table(summary: pd.DataFrame, metric_cols: list, group_cols: list) -> N
 
 def main():
     parser = argparse.ArgumentParser(description="Aggregate StructureFree-DTA results across seeds.")
-    parser.add_argument("--task", default="kd", help="Task name; selects the default output root.")
     parser.add_argument("--output_root", type=str, default=None,
-                        help="Root of run_split_benchmarks outputs (default: <EMULaToR>/outputs/baselines/StructureFree-DTA/<task>)")
+                        help="Root of run_split_benchmarks outputs (default: <EMULaToR>/outputs/baselines/StructureFree-DTA/kd)")
     parser.add_argument("--split", choices=["test", "val"], default="test")
     parser.add_argument("--group_by", choices=["split_group", "split_name"], default="split_name",
                         help="split_name groups by split folder (group and threshold); split_group pools all folders of a group")
@@ -75,7 +74,7 @@ def main():
     parser.add_argument("--save", type=str, default=None, help="Optional path to save aggregated metrics CSV")
     args = parser.parse_args()
 
-    output_root = Path(args.output_root) if args.output_root else DEFAULT_OUTPUT_ROOT / args.task
+    output_root = Path(args.output_root) if args.output_root else DEFAULT_OUTPUT_ROOT
     if not output_root.exists():
         raise FileNotFoundError(f"Output root not found: {output_root}")
 

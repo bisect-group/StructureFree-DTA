@@ -15,9 +15,8 @@ sys.path.insert(0, str(REPO_ROOT))
 from emulator_bench.common import (  # noqa: E402
     DEFAULT_OUTPUT_ROOT,
     DEFAULT_SEEDS,
-    TASK_PARENTS,
+    KD_SPLIT_ROOT,
     discover_split_jobs,
-    task_dir,
 )
 
 TRAIN_SCRIPT = REPO_ROOT / "emulator_bench" / "train_single_target_tvt.py"
@@ -51,9 +50,8 @@ def train_one(job: dict, seed: int, out_dir: Path, args, gpu: str | None) -> Non
 
 def main():
     parser = argparse.ArgumentParser(description="Run StructureFree-DTA with its original settings over EMULaToR split groups and seeds.")
-    parser.add_argument("--task", choices=sorted(TASK_PARENTS), default="kd")
-    parser.add_argument("--base_dir", default=None, help="Split root of the task. Default: the EMULaToR dataset folder of --task.")
-    parser.add_argument("--output_root", default=None, help="Default: <EMULaToR>/outputs/baselines/StructureFree-DTA/<task>.")
+    parser.add_argument("--base_dir", default=None, help="Kd split root. Default: the EMULaToR Kd dataset folder.")
+    parser.add_argument("--output_root", default=None, help="Default: <EMULaToR>/outputs/baselines/StructureFree-DTA/kd.")
     parser.add_argument("--split_groups", nargs="+", default=None)
     parser.add_argument("--seeds", nargs="+", type=int, default=DEFAULT_SEEDS)
     parser.add_argument("--device", default="cuda:0", help="Device when --gpus is not set.")
@@ -66,8 +64,8 @@ def main():
     parser.add_argument("--max_rows", type=int, default=None, help="Smoke-test only: keep the first N rows of each split.")
     args = parser.parse_args()
 
-    base_dir = Path(args.base_dir) if args.base_dir else task_dir(args.task)
-    output_root = Path(args.output_root) if args.output_root else DEFAULT_OUTPUT_ROOT / args.task
+    base_dir = Path(args.base_dir) if args.base_dir else KD_SPLIT_ROOT
+    output_root = Path(args.output_root) if args.output_root else DEFAULT_OUTPUT_ROOT
     jobs = discover_split_jobs(base_dir, args.split_groups)
     if not jobs:
         raise FileNotFoundError(f"No split jobs found in {base_dir}")

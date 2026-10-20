@@ -12,28 +12,18 @@ import torch
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EMULATOR_ROOT = REPO_ROOT.parents[1]
-DATASETS_ROOT = EMULATOR_ROOT / "data" / "processed" / "datasets"
-DEFAULT_OUTPUT_ROOT = EMULATOR_ROOT / "outputs" / "baselines" / "StructureFree-DTA"
-TASK_PARENTS = {
-    "kcat": "kinetic_dataset",
-    "km": "kinetic_dataset",
-    "ki": "kinetic_dataset",
-    "ic50": "binding_affinity_dataset",
-    "kd": "binding_affinity_dataset",
-    "ec50": "binding_affinity_dataset",
-}
+KD_SPLIT_ROOT = EMULATOR_ROOT / "data" / "processed" / "datasets" / "binding_affinity_dataset" / "kd"
+DEFAULT_OUTPUT_ROOT = EMULATOR_ROOT / "outputs" / "baselines" / "StructureFree-DTA" / "kd"
 DEFAULT_SPLIT_GROUPS = [
     "random_splits_grouped_sequence",
     "random_splits_grouped_smiles",
     "uniprot_time_splits",
     "enzyme_sequence_splits",
+    "enzyme_structure_splits",
     "substrate_splits",
+    "conformer_cosine_splits",
 ]
 DEFAULT_SEEDS = [666, 777, 888]
-
-
-def task_dir(task: str) -> Path:
-    return DATASETS_ROOT / TASK_PARENTS[task] / task
 
 
 def save_json(path: Path, payload: Dict) -> None:

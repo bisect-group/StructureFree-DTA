@@ -1,20 +1,15 @@
-# Run from the StructureFree-DTA repo root with the mldb conda env.
+# Run from the StructureFree-DTA repo root with the mldb conda env. The wrapper is Kd-only.
 
-# All default split groups, seeds 666 777 888, Kd task, one GPU.
-python -m emulator_bench.run_split_benchmarks \
-  --task kd \
-  --device cuda:0
+# All default split groups, seeds 666 777 888, one GPU.
+python -m emulator_bench.run_split_benchmarks --device cuda:0
 
 # One seed on one GPU (run one process per GPU to parallelise).
-python -m emulator_bench.run_split_benchmarks --task kd --seeds 666 --device cuda:0
-python -m emulator_bench.run_split_benchmarks --task kd --seeds 777 --device cuda:1
-python -m emulator_bench.run_split_benchmarks --task kd --seeds 888 --device cuda:2
+python -m emulator_bench.run_split_benchmarks --seeds 666 --device cuda:0
+python -m emulator_bench.run_split_benchmarks --seeds 777 --device cuda:1
+python -m emulator_bench.run_split_benchmarks --seeds 888 --device cuda:2
 
 # Multi-GPU: GPUs 0 1 2, two runs per GPU, mixed precision (bf16 on Ampere or newer).
-python -m emulator_bench.run_split_benchmarks --task kd --gpus 0 1 2 --runs_per_gpu 2 --amp
-
-# Other tasks: kcat km ki ic50 ec50.
-python -m emulator_bench.run_split_benchmarks --task ec50 --device cuda:0
+python -m emulator_bench.run_split_benchmarks --gpus 0 1 2 --runs_per_gpu 2 --amp
 
 # Train one explicit split.
 python -m emulator_bench.train_single_target_tvt \
@@ -25,7 +20,7 @@ python -m emulator_bench.train_single_target_tvt \
   --seed 666 --device cuda:0
 
 # Mean and std over seeds. Reads every seed folder. Default groups by split folder (group and threshold).
-python -m emulator_bench.aggregate_results --task kd
+python -m emulator_bench.aggregate_results
 
 # Smoke test (tiny subset, 2 epochs, own output root).
-python -m emulator_bench.run_split_benchmarks --task kd --seeds 666 --epochs 2 --max_rows 64 --output_root /path/to/smoke
+python -m emulator_bench.run_split_benchmarks --seeds 666 --epochs 2 --max_rows 64 --output_root /path/to/smoke

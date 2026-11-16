@@ -1,0 +1,9 @@
+# Paper-run commands for StructureFree-DTA (Kd). emulator_bench/run.sh runs them. Run from baselines/StructureFree-DTA.
+# PY: python of the conda env (we used mldb). Output default: <EMULaToR>/outputs/baselines/StructureFree-DTA/kd.
+PY=python
+
+# Train and evaluate: seeds 666 777 888, original fp16 autocast (no --amp). There is no cache step.
+$PY -m emulator_bench.run_split_benchmarks --seeds 666 777 888 --gpus 0 --runs_per_gpu 1
+
+# Mean and std over seeds.
+$PY -m emulator_bench.aggregate_results

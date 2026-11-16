@@ -48,7 +48,6 @@ checkpoints/
 # Data files
 *.csv
 *.tsv
-*.json
 *.pkl
 *.h5
 *.hdf5

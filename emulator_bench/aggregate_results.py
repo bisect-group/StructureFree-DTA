@@ -1,0 +1,102 @@
+import argparse
+import math
+import sys
+from pathlib import Path
+
+import pandas as pd
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from emulator_bench.common import DEFAULT_OUTPUT_ROOT, summarize_seed_runs
+
+DISPLAY_METRICS = ["rmse", "mae", "r2_score", "pearson", "spearman", "ci"]
+
+
+def scan_runs(output_root: Path, split: str) -> list:
+    rows = []
+    for result_file in sorted(output_root.rglob(f"final_results_{split}.csv")):
+        # layout: output_root/{split_group}/{split_name}/seed_{seed}/final_results_{split}.csv
+        try:
+            seed_dir = result_file.parent
+            split_name = seed_dir.parent.name
+            split_group = seed_dir.parent.parent.name
+            seed = int(seed_dir.name.replace("seed_", ""))
+        except (ValueError, IndexError):
+            continue
+        try:
+            metrics = pd.read_csv(result_file).iloc[0].to_dict()
+        except Exception:
+            continue
+        rows.append({"split_group": split_group, "split_name": split_name, "seed": seed, **metrics})
+    return rows
+
+
+def format_mean_std(mean: float, var: float, decimals: int = 4) -> str:
+    std = math.sqrt(max(var, 0.0))
+    fmt = f".{decimals}f"
+    return f"{mean:{fmt}} ± {std:{fmt}}"
+
+
+def print_table(summary: pd.DataFrame, metric_cols: list, group_cols: list) -> None:
+    mean_cols = [f"{m}_mean" for m in metric_cols if f"{m}_mean" in summary.columns]
+    if not mean_cols:
+        print("No metrics found.")
+        return
+
+    id_cols = list(group_cols) + ["n_seeds"]
+    display = summary[id_cols].copy()
+    for m in metric_cols:
+        mean_col, var_col = f"{m}_mean", f"{m}_var"
+        if mean_col in summary.columns:
+            display[m] = summary.apply(
+                lambda r: format_mean_std(r[mean_col], r.get(var_col, 0.0)), axis=1
+            )
+
+    col_widths = {col: max(len(col), display[col].astype(str).str.len().max()) for col in display.columns}
+    header = "  ".join(col.ljust(col_widths[col]) for col in display.columns)
+    print(header)
+    print("-" * len(header))
+    for _, row in display.iterrows():
+        print("  ".join(str(row[col]).ljust(col_widths[col]) for col in display.columns))
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Aggregate StructureFree-DTA results across seeds.")
+    parser.add_argument("--output_root", type=str, default=None,
+                        help="Root of run_split_benchmarks outputs (default: <EMULaToR>/outputs/baselines/StructureFree-DTA/kd)")
+    parser.add_argument("--split", choices=["test", "val"], default="test")
+    parser.add_argument("--group_by", choices=["split_group", "split_name"], default="split_name",
+                        help="split_name groups by split folder (group and threshold); split_group pools all folders of a group")
+    parser.add_argument("--metrics", nargs="+", default=DISPLAY_METRICS,
+                        help="Metrics to display (default: rmse mae r2_score pearson spearman ci)")
+    parser.add_argument("--save", type=str, default=None, help="Optional path to save aggregated metrics CSV")
+    args = parser.parse_args()
+
+    output_root = Path(args.output_root) if args.output_root else DEFAULT_OUTPUT_ROOT
+    if not output_root.exists():
+        raise FileNotFoundError(f"Output root not found: {output_root}")
+
+    rows = scan_runs(output_root, args.split)
+    if not rows:
+        raise FileNotFoundError(f"No final_results_{args.split}.csv files found under {output_root}")
+
+    all_metric_cols = [col for col in pd.DataFrame(rows).columns
+                       if col not in ("split_group", "split_name", "seed")]
+    requested = [m for m in args.metrics if m in all_metric_cols]
+
+    group_cols = ["split_group"] if args.group_by == "split_group" else ["split_group", "split_name"]
+    summary = summarize_seed_runs(rows, group_cols, requested)
+
+    print(f"\nResults ({args.split}) — mean ± std across seeds\n")
+    print_table(summary, requested, group_cols)
+
+    metrics_save = Path(args.save) if args.save else output_root / f"aggregate_{args.split}_{args.group_by}.csv"
+    metrics_save.parent.mkdir(parents=True, exist_ok=True)
+    summary.to_csv(metrics_save, index=False)
+    print(f"\nSaved metrics to {metrics_save}")
+
+
+if __name__ == "__main__":
+    main()
